@@ -40,11 +40,11 @@
             <h5>Donation Info</h5>
             <div class="form-group">
                 <label class="control-label">Source</label>
-                <select name="Donation.SourceId" class="form-control" asp-items="ViewBag.SourceId"></select>
+                <select asp-for="Donation.SourceId" class="form-control" asp-items="ViewBag.SourceId"></select>
             </div>
             <div class="form-group">
                 <label class="control-label">Year</label>
-                <input name="Donation.Year" class="form-control" value="@Model.ExistingDonation?.Year" />
+                <input asp-for="Donation.Year" class="form-control" />
             </div>
 
             <h5>Planting Info</h5>
@@ -97,7 +97,6 @@
 
             varietySelect.disabled = this.value === '';
         });
-
 
         const currentCommonName = "@Model.CurrentCommonName";
         if (currentCommonName) {

@@ -20,10 +20,12 @@ namespace SeedLibrary.Pages.Seeds
         public SeedPacket SeedPacket { get; set; } = default!;
 
         [BindProperty]
-        public List<int> SelectedPlantingDateIds { get; set; } = new List<int>();
+        public Donation Donation { get; set; } = default!;
+
+        [BindProperty]
+        public List<int> SelectedPlantingDateIds { get; set; } = new();
 
         public List<SelectListItem> PlantingDateOptions { get; set; } = new();
-        public Donation? ExistingDonation { get; set; }
         public string CurrentCommonName { get; set; } = string.Empty;
 
         public async Task<IActionResult> OnGetAsync(int? id)
@@ -38,18 +40,14 @@ namespace SeedLibrary.Pages.Seeds
 
             if (SeedPacket == null) return NotFound();
 
-            // Pre-select existing planting dates
             SelectedPlantingDateIds = SeedPacket.Growings
                 .Select(g => g.PlantingDatesId)
                 .ToList();
 
-            // Get existing donation
-            ExistingDonation = SeedPacket.Donations.FirstOrDefault();
-
-            // Set current common name for the script
+            Donation = SeedPacket.Donations.FirstOrDefault() ?? new Donation();
             CurrentCommonName = SeedPacket.Variety?.CommonNameName ?? string.Empty;
 
-            PopulateDropdowns();
+            PopulateDropdowns(Donation.SourceId);
             return Page();
         }
 
@@ -57,35 +55,37 @@ namespace SeedLibrary.Pages.Seeds
         {
             if (!ModelState.IsValid)
             {
-                PopulateDropdowns();
+                PopulateDropdowns(Donation.SourceId);
                 return Page();
             }
 
-            // 1. Update SeedPacket
-            _context.Attach(SeedPacket).State = EntityState.Modified;
+            _context.Update(SeedPacket);
 
-            // 2. Update Donation - remove old, add new
-            var existingDonations = _context.Donations.Where(d => d.SeedId == SeedPacket.SeedId);
-            _context.Donations.RemoveRange(existingDonations);
-            var donation = new Donation
-            {
-                SeedId = SeedPacket.SeedId,
-                SourceId = int.Parse(Request.Form["Donation.SourceId"]),
-                Year = int.Parse(Request.Form["Donation.Year"])
-            };
-            _context.Donations.Add(donation);
+            var existingDonation = await _context.Donations
+                .FirstOrDefaultAsync(d => d.SeedId == SeedPacket.SeedId);
 
-            // 3. Update Growings - remove old, add new
-            var existingGrowings = _context.Growings.Where(g => g.SeedId == SeedPacket.SeedId);
-            _context.Growings.RemoveRange(existingGrowings);
-            foreach (var plantingDateId in SelectedPlantingDateIds)
+            if (existingDonation != null)
             {
-                _context.Growings.Add(new Growing
+                existingDonation.SourceId = Donation.SourceId;
+                existingDonation.Year = Donation.Year;
+            }
+            else
+            {
+                _context.Donations.Add(new Donation
                 {
                     SeedId = SeedPacket.SeedId,
-                    PlantingDatesId = plantingDateId
+                    SourceId = Donation.SourceId,
+                    Year = Donation.Year
                 });
             }
+
+            var existingGrowings = _context.Growings.Where(g => g.SeedId == SeedPacket.SeedId);
+            _context.Growings.RemoveRange(existingGrowings);
+            _context.Growings.AddRange(SelectedPlantingDateIds.Select(id => new Growing
+            {
+                SeedId = SeedPacket.SeedId,
+                PlantingDatesId = id
+            }));
 
             try
             {
@@ -102,15 +102,13 @@ namespace SeedLibrary.Pages.Seeds
             return RedirectToPage("./Index");
         }
 
-        private bool SeedPacketExists(int id)
-        {
-            return _context.SeedPackets.Any(e => e.SeedId == id);
-        }
+        private bool SeedPacketExists(int id) =>
+            _context.SeedPackets.Any(e => e.SeedId == id);
 
-        private void PopulateDropdowns()
+        private void PopulateDropdowns(int? selectedSourceId = null)
         {
             ViewData["CommonName"] = new SelectList(_context.CommonNames, "Name", "Name");
-            ViewData["SourceId"] = new SelectList(_context.Sources, "Id", "SourceName");
+            ViewData["SourceId"] = new SelectList(_context.Sources, "Id", "SourceName", selectedSourceId);
             ViewData["VarietiesJson"] = System.Text.Json.JsonSerializer.Serialize(
                 _context.Varieties.Select(v => new { v.VarietyName, v.CommonNameName }).ToList()
             );
